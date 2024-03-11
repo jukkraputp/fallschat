@@ -1,17 +1,12 @@
 import streamlit as st
 from langchain.vectorstores.chroma import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
-from openai import OpenAI
 from translate import Translator
 
-st.set_page_config(page_title='DHV AI Startup', layout='wide')
+st.set_page_config(page_title="DHV AI Startup", layout="wide")
 st.title("DHV AI Startup Chatbot Demo")
 st.title("ประเมินความเสี่ยงต่อการพลัดตกหกล้ม")
-
-# Set OpenAI API key from Streamlit secrets
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 CHROMA_PATH = "chroma"
 
@@ -32,6 +27,12 @@ if "openai_model" not in st.session_state:
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    # st.session_state.messages.append(
+    #     {
+    #         "role": "system",
+    #         "content": "Please give us the falls risk at the first word of your answer, either 'HIGH' or 'LOW'.",
+    #     },
+    # )
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
@@ -49,16 +50,23 @@ if prompt := st.chat_input("What is up?"):
     if prompt:
         # Google Translate
         try:
-            translator = Translator(from_lang='th', to_lang='en')
-            translated_text = translator.translate(prompt)
+            translator = Translator(from_lang="th", to_lang="en")
+            translated_text = (
+                translator.translate(prompt)
+                + """
+                \n What is the fall risk score? (list each score and explain why it is)
+                \n Is the risk is 'Low', 'Moderate' or 'High'?
+                """
+            )
         except Exception as e:
             st.write(f"Error translating: {str(e)}")
             st.stop()
 
         # Prepare the DB.
-        api_key = st.secrets["OPENAI_API_KEY"]
-        embedding_function = OpenAIEmbeddings(openai_api_key=api_key)
-        db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
+        embedding_function = OpenAIEmbeddings()
+        db = Chroma(
+            persist_directory=CHROMA_PATH, embedding_function=embedding_function
+        )
 
         # Search the DB.
         results = db.similarity_search_with_relevance_scores(translated_text, k=3)
@@ -71,32 +79,25 @@ if prompt := st.chat_input("What is up?"):
         prompt = prompt_template.format(context=context_text, question=translated_text)
         st.write(prompt)
 
-        model = ChatOpenAI()
-        response_text = model.predict(prompt)
+        response_text = ChatOpenAI().invoke(prompt)
 
-        sources = [doc.metadata.get("source", None) for doc, _score in results]
-        formatted_response = f"<span style='color:red'>{response_text}</span>\nSources: {sources}"
+        formatted_response = f"""
+        <span style='color:red'>
+        {response_text.content}
+        </span>
+        """
         st.write(formatted_response, unsafe_allow_html=True)
 
         # Display assistant response in chat message container
-        with st.chat_message("assistant"):
-            if st.session_state.messages:
-                messages = [
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ]
-                response = client.chat.completions.create(
-                    model=st.session_state["openai_model"],
-                    messages=messages,
-                )
-                assistant_response = response.choices[0].message.content
-                st.markdown(assistant_response)
-                st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-
-                # Check if assistant response indicates high risk
-                if "high risk" in assistant_response:
-                    st.write("Please go to [this link](https://www.hopkinsmedicine.org/institute_nursing/_docs/JHFRAT/JHFRAT%20Tools/JHFRAT_acute%20care%20original_6_22_17.pdf) for the fall risk assessment.")
-                else:
-                    st.write("Please go to [this link](https://www.samitivejhospitals.com/article/detail/fall-risk-assessment) for the fall risk assessment.")
-            else:
-                st.markdown("Please enter a message.")
+        # Check if assistant response indicates high risk
+        if "HIGH" in response_text.content.upper() or "MODERATE" in response_text.content.upper():
+            st.write(
+                """
+                Please go to [this link](3.106.58.71:8501) for calculate risk from x-ray image.\n
+                Please go to [this link](https://www.hopkinsmedicine.org/institute_nursing/_docs/JHFRAT/JHFRAT%20Tools/JHFRAT_acute%20care%20original_6_22_17.pdf) for the fall risk assessment.
+                """
+            )
+        else:
+            st.write(
+                "Please go to [this link](https://www.samitivejhospitals.com/article/detail/fall-risk-assessment) for the fall risk assessment."
+            )

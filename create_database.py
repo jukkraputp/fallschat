@@ -1,18 +1,30 @@
-# conda env10
-from langchain.document_loaders import DirectoryLoader
+from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
-from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.document_loaders import S3FileLoader
+from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores.chroma import Chroma
 import os
 import shutil
+from dotenv import load_dotenv
 
+load_dotenv()
 
-# Use the API key in your code
-#print(API_KEY)
+S3_BUCKET = os.environ.get("S3_BUCKET")
+S3_KEY = os.environ.get("S3_KEY")
+S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL")
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_SESSION_TOKEN = os.environ.get("AWS_SESSION_TOKEN")
+loader = S3FileLoader(
+    bucket=S3_BUCKET,
+    key=S3_KEY,
+    region_name="ap-southeast-1",
+    # endpoint_url=S3_ENDPOINT_URL,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+)
 
 CHROMA_PATH = "chroma"
-DATA_PATH = "data/books"
 
 
 def main():
@@ -26,7 +38,6 @@ def generate_data_store():
 
 
 def load_documents():
-    loader = DirectoryLoader(DATA_PATH, glob="*.md")
     documents = loader.load()
     return documents
 
@@ -54,7 +65,6 @@ def save_to_chroma(chunks: list[Document]):
         shutil.rmtree(CHROMA_PATH)
 
     # Create a new DB from the documents.
-    openai_api_key= ' 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'
     db = Chroma.from_documents(
         chunks, OpenAIEmbeddings(), persist_directory=CHROMA_PATH
     )
